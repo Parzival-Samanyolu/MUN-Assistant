@@ -1,0 +1,5 @@
+{
+  "name": "MUN Assistant",
+  "description": "An AI-powered assistant to help Model United Nations (MUN) delegates prepare for conferences by generating detailed country briefings.",
+  "requestFramePermissions": []
+}
