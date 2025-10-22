@@ -1,14 +1,15 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { generateMUNSummary, DetailLevel } from './services/geminiService';
+import { generateMUNSummary } from './services/geminiService';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import Spinner from './components/Spinner';
 import PronunciationButton from './components/PronunciationButton';
 import HistorySidebar from './components/HistorySidebar';
-import useLocalStorage from './hooks/useLocalStorage';
-import { HistoryItem } from './types';
+import { useLocalStorage } from './hooks/useLocalStorage';
+import { HistoryItem, DetailLevel } from './types';
+
 
 const loadingMessages = [
   'Consulting diplomatic archives...',
@@ -29,6 +30,7 @@ export const App: React.FC = () => {
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [loadingMessage, setLoadingMessage] = useState<string>(loadingMessages[0]);
   const [detailLevel, setDetailLevel] = useState<DetailLevel>('standard');
+  const [includeHistory, setIncludeHistory] = useState<boolean>(false);
   const [flagUrl, setFlagUrl] = useState<string | null>(null);
   const [isFlagLoading, setIsFlagLoading] = useState<boolean>(false);
   const [isFlagVisible, setIsFlagVisible] = useState<boolean>(false);
@@ -38,12 +40,12 @@ export const App: React.FC = () => {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isSuggestionsVisible, setIsSuggestionsVisible] = useState<boolean>(false);
   
-  // New state for history
-  const [history, setHistory] = useLocalStorage<HistoryItem[]>('mun-history', []);
-  const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
-
   const intervalRef = useRef<number | null>(null);
   const countryInputContainerRef = useRef<HTMLDivElement>(null);
+
+  // History State
+  const [history, setHistory] = useLocalStorage<HistoryItem[]>('mun-briefing-history', []);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
 
   // Fetch all countries on initial load for autocomplete
@@ -178,25 +180,29 @@ export const App: React.FC = () => {
     setIsCopied(false); // Reset copy status on new generation
 
     try {
-      const result = await generateMUNSummary(country, topic, detailLevel);
+      const result = await generateMUNSummary(country, topic, detailLevel, includeHistory);
       setSummary(result);
-      
+
+      // Add to history
       const newHistoryItem: HistoryItem = {
-        id: crypto.randomUUID(),
+        id: Date.now().toString(),
         country,
         topic,
         detailLevel,
+        includeHistory,
         summary: result,
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
       };
-      setHistory(prev => [newHistoryItem, ...prev].slice(0, 20)); // Prepend and limit to 20
+      setHistory(prevHistory => [newHistoryItem, ...prevHistory]);
+
     } catch (err) {
-      setError('Failed to generate summary. Please check your connection or API key and try again.');
+      // The error from geminiService is already user-friendly
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred. Please try again.');
       console.error(err);
     } finally {
       setIsLoading(false);
     }
-  }, [country, topic, detailLevel, setHistory]);
+  }, [country, topic, detailLevel, includeHistory, setHistory]);
 
   const handleCopy = useCallback(() => {
     if (!summary) return;
@@ -211,34 +217,33 @@ export const App: React.FC = () => {
       }
     );
   }, [summary]);
-  
+
   const handleSelectHistoryItem = (item: HistoryItem) => {
     setCountry(item.country);
     setTopic(item.topic);
     setDetailLevel(item.detailLevel);
+    setIncludeHistory(item.includeHistory ?? false); // Default to false for old items
     setSummary(item.summary);
+    setIsHistoryOpen(false); // Close sidebar after selection
     setError(null);
     setIsCopied(false);
   };
 
   const handleClearHistory = () => {
-    if (window.confirm('Are you sure you want to clear all briefing history?')) {
-        setHistory([]);
-        setIsHistoryOpen(false);
-    }
+    setHistory([]);
   };
 
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-200">
-      <Header onToggleHistory={() => setIsHistoryOpen(true)} />
       <HistorySidebar
         isOpen={isHistoryOpen}
-        history={history}
         onClose={() => setIsHistoryOpen(false)}
+        history={history}
         onSelect={handleSelectHistoryItem}
         onClear={handleClearHistory}
       />
+      <Header onToggleHistory={() => setIsHistoryOpen(prev => !prev)} />
       <main className="flex-grow container mx-auto px-4 py-8 flex flex-col items-center">
         <div className="w-full max-w-4xl bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-2xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700">
           <div className="space-y-6">
@@ -308,25 +313,42 @@ export const App: React.FC = () => {
                 />
               </div>
             </div>
-             <div className="pt-2">
-                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-                Level of Detail
-                </label>
-                <div className="flex w-full bg-gray-100 dark:bg-gray-900/50 p-1 rounded-xl border border-gray-300 dark:border-gray-600">
-                {(['concise', 'standard', 'detailed'] as DetailLevel[]).map((level) => (
-                    <button
-                    key={level}
-                    onClick={() => setDetailLevel(level)}
-                    disabled={isLoading}
-                    className={`w-1/3 py-2 text-sm font-semibold rounded-lg transition-all duration-200 capitalize focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 focus:ring-blue-500 ${
-                        detailLevel === level
-                        ? 'bg-blue-600 text-white shadow'
-                        : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700/50'
-                    }`}
-                    >
-                    {level}
-                    </button>
-                ))}
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center pt-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                  Level of Detail
+                  </label>
+                  <div className="flex w-full bg-gray-100 dark:bg-gray-900/50 p-1 rounded-xl border border-gray-300 dark:border-gray-600">
+                  {(['concise', 'standard', 'detailed'] as DetailLevel[]).map((level) => (
+                      <button
+                      key={level}
+                      onClick={() => setDetailLevel(level)}
+                      disabled={isLoading}
+                      className={`w-1/3 py-2 text-sm font-semibold rounded-lg transition-all duration-200 capitalize focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 focus:ring-blue-500 ${
+                          detailLevel === level
+                          ? 'bg-blue-600 text-white shadow'
+                          : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700/50'
+                      }`}
+                      >
+                      {level}
+                      </button>
+                  ))}
+                  </div>
+                </div>
+                <div className="flex items-center justify-start md:justify-center md:pt-6">
+                    <label htmlFor="includeHistory" className="flex items-center space-x-3 cursor-pointer p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
+                        <input
+                        type="checkbox"
+                        id="includeHistory"
+                        checked={includeHistory}
+                        onChange={(e) => setIncludeHistory(e.target.checked)}
+                        disabled={isLoading}
+                        className="h-5 w-5 rounded border-gray-400 dark:border-gray-500 bg-white dark:bg-gray-900 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 transition"
+                        />
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 select-none">
+                            Include Country's History
+                        </span>
+                    </label>
                 </div>
             </div>
             <button

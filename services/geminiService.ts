@@ -1,4 +1,5 @@
 import { GoogleGenAI, Modality } from "@google/genai";
+import { DetailLevel } from "../types";
 
 if (!process.env.API_KEY) {
     throw new Error("API_KEY environment variable not set");
@@ -6,9 +7,7 @@ if (!process.env.API_KEY) {
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-export type DetailLevel = 'concise' | 'standard' | 'detailed';
-
-export async function generateMUNSummary(country: string, topic: string, detailLevel: DetailLevel): Promise<string> {
+export async function generateMUNSummary(country: string, topic: string, detailLevel: DetailLevel, includeHistory: boolean): Promise<string> {
 
   let detailInstruction = '';
   switch (detailLevel) {
@@ -37,6 +36,13 @@ export async function generateMUNSummary(country: string, topic: string, detailL
       `;
       break;
   }
+
+  const historySection = includeHistory ? `
+### Relevant Historical Background
+- Provide a concise summary of the country's historical involvement with the MUN topic. This section must not exceed 100 words.
+- Highlight only the most crucial historical events or policies that have fundamentally shaped the country's current perspective on this issue.
+` : '';
+
 
   const prompt = `
     Act as an expert political analyst and Model UN delegate advisor.
@@ -69,6 +75,8 @@ export async function generateMUNSummary(country: string, topic: string, detailL
     ### Recent Actions and Statements
     - Summarize any recent actions taken or official statements made by the country's government, leaders, or UN representatives regarding the topic (within the last 1-2 years).
 
+    ${historySection}
+
     The briefing should be well-structured, informative, and written in a formal tone suitable for a MUN delegate's preparation.
     Ensure you use Markdown headings (e.g., '### Section Title') for each section, not bolded text.
   `;
@@ -81,7 +89,17 @@ export async function generateMUNSummary(country: string, topic: string, detailL
     return response.text;
   } catch (error) {
     console.error("Error generating summary with Gemini API:", error);
-    throw new Error("Failed to get a response from the Gemini API.");
+    if (error instanceof Error) {
+        // Check for specific error messages from the Gemini API
+        if (error.message.includes('API key not valid')) {
+            throw new Error("Invalid API Key. Please check if the API key is correct and has the necessary permissions.");
+        }
+        if (error.message.toLowerCase().includes('network') || error.message.includes('fetch failed')) {
+            throw new Error("Network error. Please check your internet connection.");
+        }
+    }
+    // Generic fallback error
+    throw new Error("Failed to get a response from the Gemini API. The service may be temporarily unavailable.");
   }
 }
 
