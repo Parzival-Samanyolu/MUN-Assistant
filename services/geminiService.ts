@@ -1,5 +1,5 @@
 import { GoogleGenAI, Modality } from "@google/genai";
-import { DetailLevel } from "../types";
+import { DetailLevel, Source } from "../types";
 
 if (!process.env.API_KEY) {
     throw new Error("API_KEY environment variable not set");
@@ -7,7 +7,7 @@ if (!process.env.API_KEY) {
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-export async function generateMUNSummary(country: string, topic: string, detailLevel: DetailLevel, includeHistory: boolean): Promise<string> {
+export async function generateMUNSummary(country: string, topic: string, detailLevel: DetailLevel, includeHistory: boolean): Promise<{ summary: string; sources: Source[] }> {
 
   let detailInstruction = '';
   switch (detailLevel) {
@@ -46,7 +46,7 @@ export async function generateMUNSummary(country: string, topic: string, detailL
 
   const prompt = `
     Act as an expert political analyst and Model UN delegate advisor.
-    Your task is to generate a country briefing for a Model United Nations (MUN) conference.
+    Your task is to generate a country briefing for a Model United Nations (MUN) conference, grounding your response in the most current information available from Google Search.
 
     Country: ${country}
     MUN Committee Topic: "${topic}"
@@ -69,7 +69,7 @@ export async function generateMUNSummary(country: string, topic: string, detailL
     - Briefly explain the nature of these alliances regarding the topic.
 
     ### Potential Solutions and Policy Proposals
-    - Suggest actionable solutions or clauses that a delegate representing this country could propose in a draft resolution.
+    - Suggest actionable solutions or clauses that a delegate representing this country could propose in a a draft resolution.
     - These proposals must be in line with the country's established foreign policy and national interests.
 
     ### Recent Actions and Statements
@@ -85,8 +85,32 @@ export async function generateMUNSummary(country: string, topic: string, detailL
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-pro',
       contents: prompt,
+      config: {
+        tools: [{googleSearch: {}}],
+      },
     });
-    return response.text;
+    
+    const summary = response.text;
+    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+
+    // Use a Map to store unique URIs to avoid duplicate sources
+    const uniqueSources = new Map<string, Source>();
+    groundingChunks.forEach(chunk => {
+        if (chunk.web && chunk.web.uri) {
+            // Only add if the URI is not already in the map
+            if (!uniqueSources.has(chunk.web.uri)) {
+                uniqueSources.set(chunk.web.uri, {
+                    uri: chunk.web.uri,
+                    title: chunk.web.title || chunk.web.uri, // Use URI as fallback for title
+                });
+            }
+        }
+    });
+    
+    const sources = Array.from(uniqueSources.values());
+
+    return { summary, sources };
+
   } catch (error) {
     console.error("Error generating summary with Gemini API:", error);
     if (error instanceof Error) {
@@ -103,11 +127,11 @@ export async function generateMUNSummary(country: string, topic: string, detailL
   }
 }
 
-export async function generatePronunciationAudio(country: string): Promise<string> {
+export async function generateSpeechAudio(text: string): Promise<string> {
   try {
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: country }] }],
+        contents: [{ parts: [{ text }] }],
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
@@ -123,7 +147,7 @@ export async function generatePronunciationAudio(country: string): Promise<strin
       }
       return base64Audio;
   } catch(error) {
-    console.error("Error generating pronunciation audio:", error);
-    throw new Error("Failed to generate pronunciation audio.");
+    console.error("Error generating speech audio:", error);
+    throw new Error("Failed to generate speech audio.");
   }
 }

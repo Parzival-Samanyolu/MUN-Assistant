@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { generatePronunciationAudio } from '../services/geminiService';
+import { generateSpeechAudio } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audioUtils';
 
 interface PronunciationButtonProps {
@@ -14,7 +14,7 @@ const PronunciationButton: React.FC<PronunciationButtonProps> = ({ country }) =>
 
     setIsLoading(true);
     try {
-      const base64Audio = await generatePronunciationAudio(country);
+      const base64Audio = await generateSpeechAudio(country);
       
       // The Gemini TTS API returns audio with a 24000 sample rate
       // FIX: Cast window to `any` to support vendor-prefixed `webkitAudioContext`.

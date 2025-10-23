@@ -7,13 +7,15 @@ import Footer from './components/Footer';
 import Spinner from './components/Spinner';
 import PronunciationButton from './components/PronunciationButton';
 import HistorySidebar from './components/HistorySidebar';
+import ReadAloudButton from './components/ReadAloudButton';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { HistoryItem, DetailLevel } from './types';
+import { HistoryItem, DetailLevel, Source } from './types';
 
 
 const loadingMessages = [
   'Consulting diplomatic archives...',
   'Analyzing geopolitical data...',
+  'Searching the web for latest updates...',
   'Formulating policy recommendations...',
   'Cross-referencing UN resolutions...',
   "Drafting country's official stance...",
@@ -25,6 +27,7 @@ export const App: React.FC = () => {
   const [country, setCountry] = useState<string>('');
   const [topic, setTopic] = useState<string>('');
   const [summary, setSummary] = useState<string>('');
+  const [sources, setSources] = useState<Source[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState<boolean>(false);
@@ -177,11 +180,13 @@ export const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     setSummary('');
+    setSources([]);
     setIsCopied(false); // Reset copy status on new generation
 
     try {
-      const result = await generateMUNSummary(country, topic, detailLevel, includeHistory);
+      const { summary: result, sources: newSources } = await generateMUNSummary(country, topic, detailLevel, includeHistory);
       setSummary(result);
+      setSources(newSources);
 
       // Add to history
       const newHistoryItem: HistoryItem = {
@@ -192,6 +197,7 @@ export const App: React.FC = () => {
         includeHistory,
         summary: result,
         timestamp: new Date().toISOString(),
+        sources: newSources,
       };
       setHistory(prevHistory => [newHistoryItem, ...prevHistory]);
 
@@ -206,7 +212,11 @@ export const App: React.FC = () => {
 
   const handleCopy = useCallback(() => {
     if (!summary) return;
-    navigator.clipboard.writeText(summary).then(
+    const textToCopy = sources.length > 0
+      ? `${summary}\n\nSources:\n${sources.map(s => `- ${s.title}: ${s.uri}`).join('\n')}`
+      : summary;
+
+    navigator.clipboard.writeText(textToCopy).then(
       () => {
         setIsCopied(true);
         setTimeout(() => setIsCopied(false), 2500); // Reset after 2.5 seconds
@@ -216,7 +226,7 @@ export const App: React.FC = () => {
         setError('Could not copy summary to clipboard.');
       }
     );
-  }, [summary]);
+  }, [summary, sources]);
 
   const handleSelectHistoryItem = (item: HistoryItem) => {
     setCountry(item.country);
@@ -224,6 +234,7 @@ export const App: React.FC = () => {
     setDetailLevel(item.detailLevel);
     setIncludeHistory(item.includeHistory ?? false); // Default to false for old items
     setSummary(item.summary);
+    setSources(item.sources ?? []); // Load sources, default to empty array
     setIsHistoryOpen(false); // Close sidebar after selection
     setError(null);
     setIsCopied(false);
@@ -262,7 +273,7 @@ export const App: React.FC = () => {
                       className={`w-6 h-auto rounded-sm shadow transition-opacity duration-300 ease-in-out ${isFlagVisible ? 'opacity-100' : 'opacity-0'}`} />
                   ) : (
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9V3m0 18a9 9 0 00-9-9" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2h1a2 2 0 002-2v-1a2 2 0 012-2h1.945M7.757 15.757a3 3 0 014.486 0M12 18.75a3 3 0 01-4.486 0" />
                     </svg>
                   )}
                 </div>
@@ -378,38 +389,70 @@ export const App: React.FC = () => {
 
             {summary && (
               <div className="bg-gray-50/70 dark:bg-gray-900/70 p-6 rounded-lg border border-gray-200 dark:border-gray-700 mt-6">
-                <div className="flex justify-between items-center mb-4 border-b border-gray-300 dark:border-gray-600 pb-2">
+                <div className="flex flex-wrap gap-2 justify-between items-center mb-4 border-b border-gray-300 dark:border-gray-600 pb-2">
                   <h2 className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                     Briefing for {country}
                   </h2>
-                  <button
-                    onClick={handleCopy}
-                    className={`flex items-center text-sm font-medium px-4 py-2 rounded-lg transition-all duration-200 ${
-                      isCopied
-                        ? 'bg-green-500 dark:bg-green-600/80 text-white'
-                        : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
-                    }`}
-                  >
-                    {isCopied ? (
-                      <>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        Copied!
-                      </>
-                    ) : (
-                      <>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                        Copy Summary
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <ReadAloudButton text={summary} />
+                    <button
+                      onClick={handleCopy}
+                      className={`flex items-center text-sm font-medium px-4 py-2 rounded-lg transition-all duration-200 ${
+                        isCopied
+                          ? 'bg-green-500 dark:bg-green-600/80 text-white'
+                          : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      {isCopied ? (
+                        <>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                          Copy Summary
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
                 <div className="prose dark:prose-invert max-w-none text-gray-700 dark:text-gray-300">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{summary}</ReactMarkdown>
                 </div>
+
+                {sources && sources.length > 0 && (
+                  <div className="mt-6 border-t border-gray-300 dark:border-gray-600 pt-4">
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-3 flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9V3m0 18a9 9 0 00-9-9" />
+                      </svg>
+                      Sources
+                    </h3>
+                    <ul className="space-y-2">
+                      {sources.map((source, index) => (
+                        <li key={index} className="text-sm">
+                          <a
+                            href={source.uri}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center"
+                            title={source.uri}
+                          >
+                            <span className="truncate" style={{maxWidth: '32rem'}}>{source.title}</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1 opacity-70 group-hover:opacity-100 transition-opacity flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
           </div>
