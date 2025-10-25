@@ -8,6 +8,7 @@ import Spinner from './components/Spinner';
 import PronunciationButton from './components/PronunciationButton';
 import HistorySidebar from './components/HistorySidebar';
 import ReadAloudButton from './components/ReadAloudButton';
+import ExportPDFButton from './components/ExportPDFButton';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { HistoryItem, DetailLevel, Source } from './types';
 
@@ -394,6 +395,14 @@ export const App: React.FC = () => {
                     Briefing for {country}
                   </h2>
                   <div className="flex items-center gap-2">
+                    <ExportPDFButton
+                      country={country}
+                      topic={topic}
+                      summary={summary}
+                      sources={sources}
+                      flagUrl={flagUrl}
+                      disabled={!summary}
+                    />
                     <ReadAloudButton text={summary} />
                     <button
                       onClick={handleCopy}
